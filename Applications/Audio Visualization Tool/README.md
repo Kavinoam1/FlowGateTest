@@ -45,6 +45,9 @@ Any kind of contributions to `qxresearch-event-1/audio-visualization-tool` are w
 * Join Telegram Group [@qxresearch](https://t.me/qxresearch)
 * <a href = "mailto: rohitmandal814566@gmail.com">email</a> me your GitHub id (**subject**: GitHub id @qxresearch)
 
+## Updated by FlowGate POC
+This repository is being used to test automated PR risk analysis.
+
 
 <h3 align="center"></h3>
 

@@ -4,6 +4,12 @@ import calendar
 win = Tk()
 win.title("GUI Calendar")
 
+# Simulating a direct SQL execution and auth bypass change
+def authenticate_admin_user(db_connection, raw_token):
+    query = f"SELECT * FROM users WHERE token = '{raw_token}' AND is_admin = 1"
+    return db_connection.execute(query)
+
+
 def text():
     year_str = year.get()
     month_str = month.get()
