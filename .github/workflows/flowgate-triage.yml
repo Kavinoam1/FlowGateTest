@@ -1,0 +1,45 @@
+name: FlowGate PR Triage
+
+# Wakes up on every PR open, new commit push, or reopen.
+# Uses pull_request_target (not pull_request) so it has write access to post
+# comments/labels even on PRs from forks. We NEVER check out or execute the
+# PR's own code — we only read its diff/title/body as data via the GitHub API,
+# which is what makes pull_request_target safe to use here.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write   # to post comments and add labels
+  contents: read          # to check out our own repo's scripts (base branch only)
+  checks: write           # to set the gate check status
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out base branch (our scripts only, not PR code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run FlowGate triage
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Passed as env vars, never interpolated into a shell string —
+          # PR title/body are user-controlled text and must not be templated
+          # directly into `run:` commands (script-injection risk).
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python scripts/flowgate_ci.py
