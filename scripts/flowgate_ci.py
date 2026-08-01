@@ -15,6 +15,15 @@ Required environment variables (set by the workflow, not by hand):
   PR_NUMBER          - pull request number
   PR_TITLE           - PR title
   PR_BODY            - PR description
+
+Optional environment variable:
+  ENFORCE_RED        - "true" to fail the check (and block merge, if this
+                        check is set as required in branch protection) on
+                        a RED result. Defaults to "false" — advisory mode:
+                        posts the comment and label, never fails the check.
+                        This is the recommended default for initial rollout
+                        (see the onboarding playbook's phased rollout —
+                        advisory before enforced).
 """
 
 import os
@@ -26,6 +35,7 @@ import anthropic
 
 MODEL = "claude-sonnet-4-6"
 MAX_DIFF_LINES = 500
+ENFORCE_RED = os.environ.get("ENFORCE_RED", "false").strip().lower() == "true"
 
 MASTER_PROMPT = """You are an AI-Native Delivery Gatekeeper (Agentic TPM). Your goal is to analyze raw git diff files from Pull Requests and execute an automated Semantic Triage.
 
@@ -163,9 +173,28 @@ def ensure_label_exists(repo: str, token: str, name: str, color: str):
         resp.raise_for_status()
 
 
+def remove_stale_triage_labels(repo: str, pr_number: str, token: str, keep: str):
+    """Remove any triage:* label other than the one we're about to apply,
+    so a PR never shows two conflicting triage results (e.g. a stale
+    triage:yellow left over from an earlier commit alongside a new
+    triage:red)."""
+    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/labels"
+    resp = requests.get(url, headers=github_headers(token), timeout=30)
+    resp.raise_for_status()
+    current_labels = [label["name"] for label in resp.json()]
+    for label_name, _ in LABEL_COLORS.values():
+        if label_name in current_labels and label_name != keep:
+            del_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/labels/{label_name}"
+            del_resp = requests.delete(del_url, headers=github_headers(token), timeout=30)
+            # 404 just means it was already gone - fine.
+            if del_resp.status_code not in (200, 404):
+                del_resp.raise_for_status()
+
+
 def apply_label(repo: str, pr_number: str, token: str, category: str):
     label_name, color = LABEL_COLORS[category]
     ensure_label_exists(repo, token, label_name, color)
+    remove_stale_triage_labels(repo, pr_number, token, keep=label_name)
     url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/labels"
     resp = requests.post(url, headers=github_headers(token), json={"labels": [label_name]}, timeout=30)
     resp.raise_for_status()
@@ -195,8 +224,14 @@ def main():
     apply_label(repo, pr_number, token, result["category"])
 
     if result["category"] == "RED":
-        print("::error::FlowGate blocked this PR (RED). See PR comment for details.")
-        sys.exit(1)  # fails the check; add as a required status check to hard-block merge
+        if ENFORCE_RED:
+            print("::error::FlowGate blocked this PR (RED). See PR comment for details.")
+            sys.exit(1)  # fails the check; add as a required status check to hard-block merge
+        else:
+            # Advisory mode (default): comment + label only, never fails the
+            # check. Flip ENFORCE_RED to "true" (repo/org variable, see
+            # workflow file) once you're ready to actually gate merges.
+            print("::warning::FlowGate flagged this PR as RED (advisory mode — not blocking). See PR comment for details.")
 
 
 if __name__ == "__main__":
