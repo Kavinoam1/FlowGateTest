@@ -42,4 +42,9 @@ jobs:
           # directly into `run:` commands (script-injection risk).
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          # Advisory mode by default. To enable real merge-blocking on RED
+          # results later, set a repository (or org) variable named
+          # ENFORCE_RED to "true" under Settings -> Secrets and variables ->
+          # Actions -> Variables. No code/workflow change needed to flip it.
+          ENFORCE_RED: ${{ vars.ENFORCE_RED || 'false' }}
         run: python scripts/flowgate_ci.py
